@@ -1,54 +1,45 @@
-import streamlit as st 
+import streamlit as st
+import re
 import chromadb
+from chromadb.utils import embedding_functions
+from sentence_transformers import SentenceTransformer,util
+st.title(" Cinematic Subtitle Finder")
+client = chromadb.PersistentClient(path=r"D:\search_engine_subtitles_files")
+client.heartbeat()
+sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
 
-chroma_client = chromadb.Client()
-collection = chroma_client.get_collection(name="ENGINE")
+collection = client.get_collection(name="subtitles_embedded3", embedding_function=sentence_transformer_ef)
 
-st.set_page_config(page_title="SubHunt", page_icon="🎬", layout="wide")
-st.title("Welcome to SubHunt 🍿")
+model = SentenceTransformer("all-MiniLM-L6-v2")
 
-st.sidebar.title("Search")
-title = st.sidebar.text_input("Enter your search")
-if st.sidebar.button("Search"):
-    title = [title]
-    results = collection.query(
-        query_texts=title,
-        n_results=10
-    )
-    if results['metadatas']:
-        st.subheader("Search Results")
-        for result in results['metadatas']:
-            st.write(result)
-    else:
-        st.warning("No results found.")
+def encoding_content(x):
+    return model.encode(x, normalize_embeddings=True)
 
-# About section
-st.sidebar.title("About")
-st.sidebar.info(
-    "This is a simple web application for searching movie subtitles. "
-    "It uses ChromaDB for efficient searching. Enjoy!"
-)
+def clean_text(text):
+    text = re.sub(r'\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}\r\n', '', text)
+    text = re.sub(r'\r\n', ' ', text)
+    text = re.sub(r'<[^>]+>', '', text)
+    text = re.sub(r'[^a-zA-Z\s]', '', text)
+    text = re.sub(r'\s+', ' ', text)
+    text = text.lower()
+    text = re.sub(r'watch any video online with opensubtitles free browser extension osdblinkext', '', text)
+    text = text.strip()
+    return text
 
-# Main content
-st.write("""
-## What is SubHunt?
-SubHunt is a web application that allows you to easily search for subtitles of your favorite movies.
-""")
+def get_results(query_text):
+        
 
-st.write("""
-### How to use?
-1. Enter the title of the movie you want to search for in the sidebar.
-2. Click on the 'Search' button.
-3. The search results will be displayed below.
-""")
+        query_clean = clean_text(query_text)
+        query_em = encoding_content(query_clean)
 
-st.write("""
-### Technologies Used:
-- [Streamlit](https://streamlit.io/) for building the web application.
-- [ChromaDB](https://chromadb.org/) for efficient searching of movie subtitles.
-""")
+        search_results = collection.query(query_embeddings=query_em.tolist(), n_results=10)
+        
+        return search_results
 
-st.write("""
-### About the Developer:
-This web application is developed by [Your Name]. If you have any questions or suggestions, feel free to reach out!
-""")
+user_search = st.text_input("Enter sub title here...")
+search_results =   get_results(user_search)
+
+if st.button("Search"):
+    st.write("Top 10 Results")
+    for i, res in enumerate(search_results['metadatas'][0]):
+        st.write(f"Result {i+1} : ", res['subtitle_name'])
